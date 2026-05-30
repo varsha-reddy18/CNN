@@ -55,13 +55,22 @@ if not os.path.exists(MODEL_PATH):
 
 model = load_model(MODEL_PATH)
 # ======================================
-# LOAD DATASET
+# LOAD DATASET (Memory Optimized)
 # ======================================
 
-(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+@st.cache_data
+def load_cifar_test_data():
+    (_, _), (x_test, y_test) = cifar10.load_data()
+    return x_test, y_test
 
-x_train_norm = x_train / 255.0
-x_test_norm = x_test / 255.0
+@st.cache_data
+def load_cifar_train_samples():
+    (x_train, y_train), (_, _) = cifar10.load_data()
+    # Only keep the first 12 samples for display to minimize memory usage
+    return x_train[:12], y_train[:12]
+
+x_test, y_test = load_cifar_test_data()
+x_train_samples, y_train_samples = load_cifar_train_samples()
 
 # ======================================
 # CLASS NAMES
@@ -83,14 +92,20 @@ class_names = [
 ]
 
 # ======================================
-# MODEL EVALUATION
+# MODEL EVALUATION (Cached)
 # ======================================
 
-loss, accuracy = model.evaluate(
-    x_test_norm,
-    y_test,
-    verbose=0
-)
+@st.cache_data
+def get_model_evaluation(_model):
+    x_test_norm = x_test.astype("float32") / 255.0
+    loss, accuracy = _model.evaluate(
+        x_test_norm,
+        y_test,
+        verbose=0
+    )
+    return loss, accuracy
+
+loss, accuracy = get_model_evaluation(model)
 
 # ======================================
 # HEADER
@@ -184,14 +199,15 @@ if prediction_mode == "CIFAR Test Image":
 
         caption=f"Actual: {actual_class}",
 
-        use_container_width=True
+        width="stretch"
 
     )
 
+    normalized_image = x_test[index].astype("float32") / 255.0
     prediction = model.predict(
 
         np.expand_dims(
-            x_test_norm[index],
+            normalized_image,
             axis=0
         ),
 
@@ -255,7 +271,7 @@ else:
 
             caption="Uploaded Image",
 
-            use_container_width=True
+            width="stretch"
 
         )
 
@@ -327,7 +343,7 @@ c1, c2, c3, c4 = st.columns(4)
 
 c1.metric(
     "Training Images",
-    x_train.shape[0]
+    50000
 )
 
 c2.metric(
@@ -366,10 +382,11 @@ for col in cols:
         len(x_test)
     )
 
+    normalized_image = x_test[idx].astype("float32") / 255.0
     pred = model.predict(
 
         np.expand_dims(
-            x_test_norm[idx],
+            normalized_image,
             axis=0
         ),
 
@@ -416,12 +433,12 @@ for i, ax in enumerate(
 ):
 
     ax.imshow(
-        x_train[i]
+        x_train_samples[i]
     )
 
     ax.set_title(
         class_names[
-            y_train[i][0]
+            y_train_samples[i][0]
         ]
     )
 
@@ -446,8 +463,8 @@ st.markdown(
 st.subheader("📈 Class Distribution")
 
 counts = pd.Series(
-    y_train.flatten()
-).value_counts().sort_index()
+    [5000] * 10
+).sort_index()
 
 fig, ax = plt.subplots(
     figsize=(10,5)
@@ -578,9 +595,10 @@ for ax, idx in zip(
     indices
 ):
 
+    normalized_image = x_test[idx].astype("float32") / 255.0
     pred = model.predict(
         np.expand_dims(
-            x_test_norm[idx],
+            normalized_image,
             axis=0
         ),
         verbose=0
